@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: >
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. SPDX-License-Identifier: MIT-0
+  amazon-cloudwatch-for-couchbase
+
+  SAM Template for amazon-cloudwatch-for-couchbase
+
+Parameters:
+  couchbaseClusterHostParam:
+    Type: String
+    Description: Couchbase cluster hostname
+  couchbaseClusterPortParam:
+    Type: Number
+    Default: 8091
+    Description: Couchbase cluster port
+    MaxValue: 65535
+    MinValue: 0
+  couchbaseUserParam:
+    Type: String
+    Description: Cocuhbase user that is able to call monitoring APIs
+  couchbasePasswordParam:
+    Type: String
+    Description: Password for the couchbase username
+    NoEcho: true
+  lambdaSecurityGroupsParam:
+    Description: Security group attached to lambda to access couchbase if cluster is not public
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  lambdaSubnetIdsParam:
+    Description: Subnet ids to launch lambda atteched network interface if cluster is not public
+    Type: List<AWS::EC2::Subnet::Id>
+  bucketsParam:
+      Type: String
+      Description: Additional granular monitoring for buckets; Comma seperated and every bucket name enclosed with " charecters
+      MinLength: 0
+Resources:
+  MonitorCouchbaseFunctionServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+  MonitorCouchbaseFunctionServiceRoleDefaultPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: cloudwatch:PutMetricData
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: Couchbase
+            Effect: Allow
+            Resource: "*"
+          - Action: secretsmanager:GetSecretValue
+            Effect: Allow
+            Resource:
+              Ref: CouchbaseSecret
+        Version: "2012-10-17"
+      PolicyName: MonitorCouchbaseFunctionServiceRoleDefaultPolicy
+      Roles:
+        - Ref: MonitorCouchbaseFunctionServiceRole
+  MonitorCouchbaseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../couchbase_monitor_lambda
+      Handler: couchbase_monitor.handler
+      Role:
+        Fn::GetAtt:
+          - MonitorCouchbaseFunctionServiceRole
+          - Arn
+      Runtime: python3.8
+      VpcConfig:
+        SecurityGroupIds: !Ref lambdaSecurityGroupsParam
+        SubnetIds: !Ref lambdaSubnetIdsParam
+    DependsOn:
+      - MonitorCouchbaseFunctionServiceRoleDefaultPolicy
+      - MonitorCouchbaseFunctionServiceRole
+  MonitorCouchbaseFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - MonitorCouchbaseFunction
+          - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - MonitorCouchbaseRule
+          - Arn
+
+  CouchbaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      SecretString:
+        Fn::Join:
+          - ""
+          - - '{'
+            - '"username": "'
+            - Ref: couchbaseUserParam
+            - '",'
+            - '"password": "'
+            - Ref: couchbasePasswordParam
+            - '"'
+            - '}'
+  MonitorCouchbaseRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(1 minutes)
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - MonitorCouchbaseFunction
+              - Arn
+          Id: Target0
+          Input:
+            Fn::Join:
+              - ""
+              - - '{"cluster_secret":"'
+                - Ref: CouchbaseSecret
+                - '",'
+                - '"host": "'
+                - Ref: couchbaseClusterHostParam
+                - '",'
+                - '"port": '
+                - Ref: couchbaseClusterPortParam
+                - ','
+                - '"buckets":['
+                - Ref: 'bucketsParam'
+                - ']}'
+Outputs:
+  couchbaseMetrics:
+    Description: Link to monitored Couchbase metrics
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#metricsV2:graph=~();namespace=~'Couchbase"
+  monitoringRule:
+    Description: Link to monitoring Amazon EventBridge rule
+    Value:
+      !Join
+      - '/'
+      - - !Sub "https://${AWS::Region}.console.aws.amazon.com/events/home?region=${AWS::Region}#/eventbus/default/rules"
+        - !Ref MonitorCouchbaseRule

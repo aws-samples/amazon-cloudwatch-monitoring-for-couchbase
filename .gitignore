@@ -1,0 +1,31 @@
+# Python
+*.swp
+package-lock.json
+.pytest_cache
+*.egg-info
+
+## Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+## Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# SAM Context & Staging files
+.aws-sam
+samconfig.toml
+
+# VS Code
+.vscode
+.ropeproject
+
+# IntelliJ and PyCharm
+/.idea/
+*.iml

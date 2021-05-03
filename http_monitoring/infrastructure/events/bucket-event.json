@@ -1,0 +1,7 @@
+{
+    "_comment": "Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. SPDX-License-Identifier: MIT-0",
+    "cluster_secret":"arn_or_id_of_secretsmanager_secret",
+    "host": "couchbase_cluster_host",
+    "post": 8901,
+    "buckets": ["travel-sample", "beer-sample"]
+}
